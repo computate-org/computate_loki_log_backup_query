@@ -47,7 +47,7 @@
         cat {{ lookup('vars', 'LOG_FILE_' + ((LOOP_COUNTER | length) | string)) }}
       register: LOG_FILE_REGISTER
     - name: Get current LOG_END_ISO8601
-      set_fact: { "LOG_END_ISO8601_{{ (LOOP_COUNTER | length) }}": "{{ ((LOG_FILE_REGISTER.stdout | from_json) | last)._timestamp }}" }
+      set_fact: { "LOG_END_ISO8601_{{ (LOOP_COUNTER | length) }}": "{{ ((LOG_FILE_REGISTER.stdout | from_json) | first)._timestamp }}" }
     - name: Get log date
       shell: >-
         date -d '{{ lookup('vars', 'LOG_END_ISO8601_' + ((LOOP_COUNTER | length) | string)) }}' '+%s%N' > {{ LOG_END_NANOS_FILE }}
