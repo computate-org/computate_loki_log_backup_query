@@ -18,7 +18,7 @@
 - block:
     - name: Get current LOG_FILE
       set_fact: { "LOG_FILE_{{ (LOOP_COUNTER | length) }}": "{{ LOG_BACKUP_DIR }}/{{ LOKI_LOG_TYPE }}-{{ lookup('vars', 'LOG_CONFIG_' + ((LOOP_COUNTER | length) | string)).LOG_END_ISO8601 | replace(':', '-') }}.log" }
-    - name: Query {{ LOG_LIMIT }} logs from {{ lookup('vars', 'LOG_CONFIG_' + ((LOOP_COUNTER | length) | string)).LOG_START_ISO8601 }} to {{ lookup('vars', 'LOG_CONFIG_' + ((LOOP_COUNTER | length) | string)).LOG_END_ISO8601 }}
+    - name: Query {{ LOG_LIMIT }} {{ LOKI_LOG_TYPE }} logs from {{ lookup('vars', 'LOG_CONFIG_' + ((LOOP_COUNTER | length) | string)).LOG_START_ISO8601 }} to {{ lookup('vars', 'LOG_CONFIG_' + ((LOOP_COUNTER | length) | string)).LOG_END_ISO8601 }}
       uri:
         timeout: "{{ LOKI_TIMEOUT_SECONDS | int }}"
         url: "{{ LOKI_BASE_URL }}/api/logs/v1/{{ LOKI_LOG_TYPE }}/loki/api/v1/query_range?query=%7B+log_type%3D%7E%22.%2B%22+%7D+%7C+json&start={{ lookup('vars', 'LOG_CONFIG_' + ((LOOP_COUNTER | length) | string)).LOG_START_NANOS }}&end={{ lookup('vars', 'LOG_CONFIG_' + ((LOOP_COUNTER | length) | string)).LOG_END_NANOS }}&limit={{ LOG_LIMIT }}"
@@ -28,11 +28,17 @@
         method: GET
         body_format: json
         dest: "{{ lookup('vars', 'LOG_FILE_' + ((LOOP_COUNTER | length) | string)) }}"
+      register: result
+      retries: "{{ LOKI_QUERY_RETRIES | int }}"
+      delay: "{{ LOKI_QUERY_RETRIES_DELAY_SECONDS | int }}"
+      until: result.status == 200
     - name: Get current logs
       shell: |
         cat {{ lookup('vars', 'LOG_FILE_' + ((LOOP_COUNTER | length) | string)) }}
       register: LOG_FILE_REGISTER
-    - copy:
+    - name: |
+        Write current logs to {{ lookup('vars', 'LOG_FILE_' + ((LOOP_COUNTER | length) | string)) }}
+      copy:
         content: |
           {{ (LOG_FILE_REGISTER.stdout | from_json).data.result | map(attribute='stream') | sort(attribute='_timestamp', reverse=true) | to_nice_json }}
         dest: "{{ lookup('vars', 'LOG_FILE_' + ((LOOP_COUNTER | length) | string)) }}"
