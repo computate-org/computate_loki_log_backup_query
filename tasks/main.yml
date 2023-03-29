@@ -1,43 +1,69 @@
 ---
+
 - name: Get current config
-  set_fact: { "LOG_CONFIG_{{ query_index }}": "{{ lookup('file', LOG_CONFIG_FILE) | from_yaml }}" }
+  shell: |
+    cat {{ LOG_CONFIG_FILE }}
+  register: LOG_CONFIG_REGISTER
+- name: Set current config
+  set_fact: { "LOG_CONFIG_{{ (LOOP_COUNTER | length) + 1 }}": "{{ LOG_CONFIG_REGISTER.stdout | from_yaml }}" }
+
+- name: Append to LOOP_COUNTER
+  set_fact:
+    LOOP_COUNTER: "{{ LOOP_COUNTER + [ 1 ] }}"
+
 - name: Debug index and Loki URL
   debug:
     msg: |
-      {{ query_index }} {{ LOKI_BASE_URL }}/api/logs/v1/{{ LOKI_LOG_TYPE }}/loki/api/v1/query_range?query=%7B+log_type%3D%7E%22.%2B%22+%7D+%7C+json&start={{ lookup('vars', 'LOG_CONFIG_' + (query_index | string)).LOG_START_NANOS }}&end={{ lookup('vars', 'LOG_CONFIG_' + (query_index | string)).LOG_END_NANOS }}&limit={{ LOG_LIMIT }}&direction=forward
+      {{ (LOOP_COUNTER | length) }} {{ LOKI_BASE_URL }}/api/logs/v1/{{ LOKI_LOG_TYPE }}/loki/api/v1/query_range?query=%7B+log_type%3D%7E%22.%2B%22+%7D+%7C+json&start={{ lookup('vars', 'LOG_CONFIG_' + ((LOOP_COUNTER | length) | string)).LOG_START_NANOS }}&end={{ lookup('vars', 'LOG_CONFIG_' + ((LOOP_COUNTER | length) | string)).LOG_END_NANOS }}&limit={{ LOG_LIMIT }}&direction=forward
 - block:
     - name: Get current LOG_FILE
-      set_fact: { "LOG_FILE_{{ query_index }}": "{{ LOG_BACKUP_DIR }}/{{ LOKI_LOG_TYPE }}-{{ lookup('vars', 'LOG_CONFIG_' + (query_index | string)).LOG_END_ISO8601 | replace(':', '-') }}.log" }
-    - name: Query {{ LOG_LIMIT }} logs from {{ lookup('vars', 'LOG_CONFIG_' + (query_index | string)).LOG_START_ISO8601 }} to {{ lookup('vars', 'LOG_CONFIG_' + (query_index | string)).LOG_END_ISO8601 }}
+      set_fact: { "LOG_FILE_{{ (LOOP_COUNTER | length) }}": "{{ LOG_BACKUP_DIR }}/{{ LOKI_LOG_TYPE }}-{{ lookup('vars', 'LOG_CONFIG_' + ((LOOP_COUNTER | length) | string)).LOG_END_ISO8601 | replace(':', '-') }}.log" }
+    - name: Query {{ LOG_LIMIT }} logs from {{ lookup('vars', 'LOG_CONFIG_' + ((LOOP_COUNTER | length) | string)).LOG_START_ISO8601 }} to {{ lookup('vars', 'LOG_CONFIG_' + ((LOOP_COUNTER | length) | string)).LOG_END_ISO8601 }}
       uri:
         timeout: "{{ LOKI_TIMEOUT_SECONDS | int }}"
-        url: "{{ LOKI_BASE_URL }}/api/logs/v1/{{ LOKI_LOG_TYPE }}/loki/api/v1/query_range?query=%7B+log_type%3D%7E%22.%2B%22+%7D+%7C+json&start={{ lookup('vars', 'LOG_CONFIG_' + (query_index | string)).LOG_START_NANOS }}&end={{ lookup('vars', 'LOG_CONFIG_' + (query_index | string)).LOG_END_NANOS }}&limit={{ LOG_LIMIT }}"
+        url: "{{ LOKI_BASE_URL }}/api/logs/v1/{{ LOKI_LOG_TYPE }}/loki/api/v1/query_range?query=%7B+log_type%3D%7E%22.%2B%22+%7D+%7C+json&start={{ lookup('vars', 'LOG_CONFIG_' + ((LOOP_COUNTER | length) | string)).LOG_START_NANOS }}&end={{ lookup('vars', 'LOG_CONFIG_' + ((LOOP_COUNTER | length) | string)).LOG_END_NANOS }}&limit={{ LOG_LIMIT }}"
         return_content: true
         headers:
           Authorization: "Bearer {{ LOKI_TOKEN }}"
         method: GET
         body_format: json
-        dest: "{{ lookup('vars', 'LOG_FILE_' + (query_index | string)) }}"
+        dest: "{{ lookup('vars', 'LOG_FILE_' + ((LOOP_COUNTER | length) | string)) }}"
+    - name: Get current logs
+      shell: |
+        cat {{ lookup('vars', 'LOG_FILE_' + ((LOOP_COUNTER | length) | string)) }}
+      register: LOG_FILE_REGISTER
     - copy:
         content: |
-          {{ (lookup('file', lookup('vars', 'LOG_FILE_' + (query_index | string))) | from_json).data.result | map(attribute='stream') | sort(attribute='_timestamp', reverse=true) | to_nice_json }}
-        dest: "{{ lookup('vars', 'LOG_FILE_' + (query_index | string)) }}"
+          {{ (LOG_FILE_REGISTER.stdout | from_json).data.result | map(attribute='stream') | sort(attribute='_timestamp', reverse=true) | to_nice_json }}
+        dest: "{{ lookup('vars', 'LOG_FILE_' + ((LOOP_COUNTER | length) | string)) }}"
+    - name: Get current logs
+      shell: |
+        cat {{ lookup('vars', 'LOG_FILE_' + ((LOOP_COUNTER | length) | string)) }}
+      register: LOG_FILE_REGISTER
     - name: Get current LOG_END_ISO8601
-      set_fact: { "LOG_END_ISO8601_{{ query_index }}": "{{ ((lookup('file', lookup('vars', 'LOG_FILE_' + (query_index | string))) | from_json) | last)._timestamp }}" }
+      set_fact: { "LOG_END_ISO8601_{{ (LOOP_COUNTER | length) }}": "{{ ((LOG_FILE_REGISTER.stdout | from_json) | last)._timestamp }}" }
     - name: Get log date
       shell: >-
-        date -d '{{ lookup('vars', 'LOG_END_ISO8601_' + (query_index | string)) }}' '+%s%N' > {{ LOG_END_NANOS_FILE }}
+        date -d '{{ lookup('vars', 'LOG_END_ISO8601_' + ((LOOP_COUNTER | length) | string)) }}' '+%s%N' > {{ LOG_END_NANOS_FILE }}
+    - name: Get current logs
+      shell: |
+        cat {{ lookup('vars', 'LOG_END_NANOS_FILE') }}
+      register: LOG_END_NANOS_FILE_REGISTER
     - name: Get current LOG_END_NANOS
-      set_fact: { "LOG_END_NANOS_{{ query_index }}": "{{ lookup('file', LOG_END_NANOS_FILE) }}" }
+      set_fact: { "LOG_END_NANOS_{{ (LOOP_COUNTER | length) }}": "{{ LOG_END_NANOS_FILE_REGISTER.stdout }}" }
     - copy:
         content: |
-          LOG_END_ISO8601: "{{ lookup('vars', 'LOG_END_ISO8601_' + (query_index | string)) }}"
-          LOG_END_NANOS: "{{ lookup('vars', 'LOG_END_NANOS_' + (query_index | string)) }}"
+          LOG_END_ISO8601: "{{ lookup('vars', 'LOG_END_ISO8601_' + ((LOOP_COUNTER | length) | string)) }}"
+          LOG_END_NANOS: "{{ lookup('vars', 'LOG_END_NANOS_' + ((LOOP_COUNTER | length) | string)) }}"
           LOG_START_ISO8601: "{{ LOG_START_ISO8601_CMD.stdout }}"
           LOG_START_NANOS: "{{ LOG_START_NANOS_CMD.stdout }}"
-          CONTINUE: "{{ (lookup('vars', 'LOG_END_NANOS_' + (query_index | string)) > LOG_START_NANOS_CMD.stdout) | string | lower }}"
+          CONTINUE: "{{ (lookup('vars', 'LOG_END_NANOS_' + ((LOOP_COUNTER | length) | string)) > LOG_START_NANOS_CMD.stdout) | string | lower }}"
         dest: "{{ LOG_CONFIG_FILE }}"
-  when: lookup('vars', 'LOG_CONFIG_' + (query_index | string)).LOG_END_NANOS > lookup('vars', 'LOG_CONFIG_' + (query_index | string)).LOG_START_NANOS
+
+    - name: Get logs
+      include_role:
+        name: computate.computate_loki_log_backup_query
+  when: lookup('vars', 'LOG_CONFIG_' + ((LOOP_COUNTER | length) | string)).LOG_END_NANOS > lookup('vars', 'LOG_CONFIG_' + ((LOOP_COUNTER | length) | string)).LOG_START_NANOS
 #  when: LOG_END_NANOS < PREV_LOG_END_NANOS
 #  when: (LOG_DATA.stdout | from_json).data.result | length > 0
 #  when: NEXT_LOG_END_NANOS < PREV_LOG_END_NANOS
