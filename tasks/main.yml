@@ -40,7 +40,7 @@
         Write current logs to {{ lookup('vars', 'LOG_FILE_' + ((LOOP_COUNTER | length) | string)) }}
       copy:
         content: |
-          {{ (LOG_FILE_REGISTER.stdout | from_json).data.result | map(attribute='stream') | sort(attribute='_timestamp', reverse=true) | to_nice_json }}
+          {{ (LOG_FILE_REGISTER.stdout | from_json).data.result | map(attribute='stream') | sort(attribute='_timestamp') | to_nice_json }}
         dest: "{{ lookup('vars', 'LOG_FILE_' + ((LOOP_COUNTER | length) | string)) }}"
     - name: Get current logs
       shell: |
